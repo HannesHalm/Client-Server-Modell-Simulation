@@ -1,0 +1,68 @@
+import simpy
+import random
+
+RANDOM_SEED = 42
+SERVER_CAPACITY = 2
+NUM_CLIENTS = 5
+client_list = []
+
+NUM_SERVER = 3
+server_list = []
+
+
+"""
+- Client 
+- param: time for connection
+"""
+class Client(object):
+
+    def __init__(self, client_id, env, connection_time, preferred_server_id=0):
+        self.client_id = client_id
+        self.env = env
+        self.connection_time = connection_time
+        self.preferred_server_id = preferred_server_id
+
+    def connect(self, server, server_list):
+        print(self.client_id, "Trying to connect to: ", server.server_id, "at time ", self.env.now)
+        print("Resource que ", server.connection.queue)
+
+        if not server.connection.queue:
+            with server.connection.request() as req:
+                yield req
+                print(self.client_id, "Connected to: ", server.server_id, "at time ", self.env.now)
+                yield env.timeout(random.expovariate(self.connection_time))
+
+
+"""
+- Server resource class
+- param: capacity (number of connections)
+"""
+class Server(object):
+
+    def __init__(self, server_id, env, capacity):
+        self.server_id = server_id
+        self.env = env
+        self.connection = simpy.Resource(env, capacity=capacity)
+
+
+"""
+- Initialize clients and servers
+- param: enviroment, amount of clients and servers
+"""
+def init(env, num_clients, num_servers):
+    for client in range(num_clients):
+        client_list.append(Client(client, env, connection_time=10))
+
+    for server in range(num_servers):
+        server_list.append(Server(server, env, SERVER_CAPACITY))
+
+    for client in client_list:
+        env.process(client.connect(server_list[client.preferred_server_id], server_list))
+
+
+random.seed(RANDOM_SEED)
+
+env = simpy.Environment()
+init(env, NUM_CLIENTS, NUM_SERVER)
+env.run(until=10000)
+
