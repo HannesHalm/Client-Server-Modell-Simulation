@@ -3,7 +3,8 @@ import random
 
 RANDOM_SEED = 42
 SERVER_CAPACITY = 2
-NUM_CLIENTS = 5
+NUM_CLIENTS = 100
+CONNECTION_TIME = 10
 client_list = []
 
 NUM_SERVER = 3
@@ -12,41 +13,72 @@ server_list = []
 
 """
 - Client 
-- param: time for connection
+- param: time for connection, preferred server (nearest), list of nearby servers (suboptimal to preferred server)
 """
 class Client(object):
 
-    def __init__(self, client_id, env, connection_time, preferred_server = None, nearby_servers_id=None):
-        self.client_id = client_id
+    def __init__(self, client_id, env, connection_time, preferred_server = None, nearby_servers=None):
+        self.client_id = "Client" + str(client_id)
         self.env = env
         self.connection_time = connection_time
         self.preferred_server = preferred_server
-        self.nearby_servers_id = []
+        self.nearby_servers = []
+
+    def connect_to_preferred(self, server_list):
+        with self.preferred_server.connection.request() as req:
+            yield req
+            print(self.client_id, "Connected to: ", self.preferred_server.server_id, "at time ", self.env.now)
+            yield env.timeout(random.expovariate(1 / self.connection_time))
 
     def connect(self, server_list):
         print(self.client_id, "Trying to connect to: ", self.preferred_server.server_id, "at time ", self.env.now)
-        print("Resource que ", self.preferred_server.connection.queue)
 
         # Connect to prioritized server if available
         if len(self.preferred_server.connection.users) < self.preferred_server.capacity:
             with self.preferred_server.connection.request() as req:
                 yield req
-                print(self.client_id, "Connected to: ", self.preferred_server.server_id, "at time ", self.env.now)
+                print(self.client_id, "Connected to preferred: ", self.preferred_server.server_id, "at time ", self.env.now)
+                t = random.expovariate(1 / self.connection_time)
+                print(self.client_id, "Connection time ", t)
+                yield env.timeout(t)
 
-                print("This is Posiedon ", random.expovariate(1 / self.connection_time))
-                yield env.timeout(random.expovariate(1 / self.connection_time))
-
-        # Check if another nearby server is available
+        # Check if another nearby server is available and connect
         else:
-            server_list
+            connected_to_nearby = False
+
+            for server in self.nearby_servers:
+                if len(server.connection.users) < server.capacity:
+                    with server.connection.request() as req:
+                        yield req
+
+                        connected_to_nearby = True
+                        print(self.client_id, "Connected to: ", server.server_id, "at time ",
+                                self.env.now)
+                        # Penealized connection
+                        t = random.expovariate(1 / (self.connection_time * 2))
+                        print(self.client_id, "Connection time ", t)
+                        yield env.timeout(t)
+
+            # If no other server nearby que to preferred server
+            if not connected_to_nearby:
+                print(self.client_id, "is in que for preferred server ", self.preferred_server.server_id)
+                with self.preferred_server.connection.request() as req:
+                    yield req
+                    print(self.client_id, "Connected to preferred: ", self.preferred_server.server_id, "at time ",
+                          self.env.now)
+                    t = random.expovariate(1 / self.connection_time)
+                    print(self.client_id, "Connection time ", t)
+                    yield env.timeout(t)
+
+
 """
 - Server resource class
-- param: capacity (number of connections)
+- param: a id, simpy environment, capacity (number of connections)
 """
 class Server(object):
 
     def __init__(self, server_id, env, capacity):
-        self.server_id = server_id
+        self.server_id = "Server"+str(server_id)
         self.env = env
         self.capacity = capacity
         self.connection = simpy.Resource(env, capacity=capacity)
@@ -60,21 +92,30 @@ def init(env, num_clients, num_servers):
     for server in range(num_servers):
         server_list.append(Server(server, env, SERVER_CAPACITY))
 
+    counter = 0
+    while True:
+        c = Client(counter, env, CONNECTION_TIME, server_list[0])
+        temp_server_list = [server for server in server_list if server != c.preferred_server]
+        c.nearby_servers = temp_server_list
+        env.process(c.connect(server_list))
+        counter += 1
+        yield env.timeout(2)
+    """
     for client in range(num_clients):
-        client_list.append(Client(client, env, 10, server_list[0]))
+    #while True:
+        client_list.append(Client(client, env, CONNECTION_TIME, server_list[0]))
+        temp_server_list = [server for server in server_list if server != client_list[-1].preferred_server]
+        client_list[-1].nearby_servers = temp_server_list
+        print("Nearby servers: ", client_list[-1].nearby_servers)
 
-    for client in client_list:
-        temp_server_list = [server for server in server_list if server != client.preferred_server]
-        client.nearby_servers_id = temp_server_list
-        print("nearby servers: ", client.nearby_servers_id)
-
-    for client in client_list:
-        env.process(client.connect(server_list))
+    #for client in client_list:
+        env.process(client_list[-1].connect(server_list))
+    """
 
 
 random.seed(RANDOM_SEED)
 
 env = simpy.Environment()
-init(env, NUM_CLIENTS, NUM_SERVER)
-env.run(until=1000)
+env.process(init(env, NUM_CLIENTS, NUM_SERVER))
+env.run(until=100)
 
