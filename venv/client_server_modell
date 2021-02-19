@@ -106,7 +106,9 @@ def init(env, num_servers):
 
     counter = 0
     while True:
-        c = Client(counter, env, CONNECTION_TIME, server_list[random.choice(CHOOSE_SERVER)])
+        c = Client(counter, env, CONNECTION_TIME, server_list[0])
+        #c = Client(counter, env, CONNECTION_TIME, server_list[random.choice(CHOOSE_SERVER)])
+        #c = Client(counter, env, CONNECTION_TIME, random.choice(server_list))
         temp_server_list = [server for server in server_list if server != c.preferred_server]
         c.nearby_servers = temp_server_list
         env.process(c.connect(server_list))
@@ -121,11 +123,9 @@ env = simpy.Environment()
 env.process(init(env, NUM_SERVER))
 env.run(until=1440)
 
-for time in WAITING_TIMES:
-    print("%.6f" % time)
 AVERAGE_WAITING_TIMES = []
 sum = 0
-
+print(WAITING_TIMES)
 for i in range(len(WAITING_TIMES)):
     sum += WAITING_TIMES[i]
     AVERAGE_WAITING_TIMES.append(sum/(i+1))
@@ -136,6 +136,6 @@ plt.plot(x, AVERAGE_WAITING_TIMES)
 #plt.plot(x, WAITING_TIMES)
 plt.ylabel('Average waiting time')
 plt.xlabel('Finished clients')
-plt.text(1, 58, "Number of servers {}, Server capacity {}, Arrival rate {}"
+plt.text(1, 63, "Number of servers {}, Server capacity {}, Arrival rate {}"
          .format(NUM_SERVER, SERVER_CAPACITY, ARRIVAL))
 plt.show()
